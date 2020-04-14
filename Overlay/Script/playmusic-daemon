@@ -4,43 +4,71 @@ set -e
 PLAYER="/media"
 songs="/songsFile/Songs_NamesFile"
 usbFlag="/songsFile/USBDetectFlag_File.conf"
-
+stateFlag="/songsFile/cmdState"
+SongNumber="/songsFile/SongNumberFile"
+playState="/songsFile/playStateFile" 
 
 test -d ${PLAYER} || exit 1
 
 mkdir -p /songsFile
 
 # Remove file if exist
-if [ -f  songs ] ; then
+if [ -f  $songs ] ; then
     rm $songs
 fi
 
 
-functionToSetArrayOfMusic(){
 
-CommandLine=0
-song_counter=0
-CommandLine=0                               
-song_counter=0                              
-Song_Number=1                               
-Min_NumberOfSong=1                          
-button_state=0                              
-FirstTimeFlag=0                             
-PlayingFlag=0               
-                            
-                            
-# Remove file if exist      
-                            
+if [ ! -e /songsFile/cmdState ]
+then
+ touch /songsFile/cmdState
+ chmod 777 /songsFile/cmdState
+fi
+
+if [ ! -e /songsFile/cmdState ]                                                 
+then                                                                            
+ touch $playState                                                    
+ chmod 777 $playState                                                
+fi 
+ 
+echo 0 > $playState 
+
+if [ ! -e $SongNumber ]                                                 
+then                                                                            
+ touch $SongNumber                                                    
+ chmod 777 $SongNumber                                                  
+fi  
+
+
+if [ ! -f $stateFlag ] ; then
+   touch $stateFlag
+   chmod 777 $stateFlag
+   echo 0 > stateFlag
+fi
+CommandLine=$stateFlag                      
+                                            
+                                            
+                                            
+functionToSetArrayOfMusic(){                
+                               
+song_counter=0               
+Song_Number=1                
+Min_NumberOfSong=1           
+button_state=0               
+FirstTimeFlag=0              
+PlayingFlag=0           
+                             
+                             
 # find the songs in media folder
 find $PLAYER -iname "*mp3" | while read song
 do                                          
           echo "$song">> $songs             
-          echo $song                        
-done                                        
-song_counter=$( wc -l < $songs )            
-}                                           
                                             
-functionToSetArrayOfMusic 
+done                                        
+song_counter=$( wc -l < $songs )  
+echo $Min_NumberOfSong > $SongNumber          
+}                         
+functionToSetArrayOfMusic                   
 if [ ! -f  $usbFlag ] ; then                
     echo "DetectUSBFlag=0" > $usbFlag       
     chmod 777 $usbFlag                      
@@ -62,7 +90,7 @@ fi
 if [ ! -d /sys/class/gpio/gpio18 ] ; then # check if export process has done bef
      # Ask kernal to export the virtual file to control gpio                    
     echo "18" > /sys/class/gpio/export                                          
-    # Set pin direction as input  
+    # Set pin direction as input     
     # Set pin direction as input                                                
     echo "in" > /sys/class/gpio/gpio18/direction                                
 fi                                                                              
@@ -85,197 +113,203 @@ do
     functionToSetArrayOfMusic                                                   
     echo "DetectUSBFlag=0" > $usbFlag                                           
   fi                                                                            
-   #check if running the script without choosing any option                     
-  if [[ -z $1 ]];then                                                           
-        CommandLine=0          #button as input                                 
-  else                                                                          
-       CommandLine=1           #command line as input                           
-       choice=$1                                                                
-       read choice                                                              
-  fi                                                                            
-  if [ $CommandLine -eq 1 ];then                                                
-        case $choice in                                                         
-                'play') echo "Play Song"                                        
-                       music=$( awk 'NR==n' n=$Song_Number $songs )             
-                       echo ${music}                                            
-                       mpg123 ${music} &                                        
-                       FirstTimeFlag=1                                          
-                       PlayingFlag=1                                            
-                       button_state=1                                           
-                       if [ $button_state -eq 0 ]                               
-                         then                                                   
-                          echo "play"                                           
-                          killall -CONT mpg123                                  
-                          PlayingFlag=1    
-                          button_state=1                                        
-                          sleep 0.4                                             
-                       fi                                                       
-                  ;;                                                            
-                'pause')                                                        
-                       if [ $button_state -eq 1 ]                               
-                         then                                                   
-                           echo "pause"                                         
-                           killall -STOP  mpg123                                
-                           PlayingFlag=0                                        
-                           button_state=0                                       
-                       fi                                                       
-                  ;;                                                            
-                'next')                                                         
-                     echo "Next Song"                                           
-                     if [ $PlayingFlag -eq 1 ] ; then                           
+   if [[ $( cat $CommandLine ) ==  '1' ]] ; then  #play                          
+        if [ $song_counter -eq 0 ] ; then
+           echo "No .MP3 files found"
+           sleep 0.4
+        else
+            Song_Number=$( cat $SongNumber ) 
+            music=$( awk 'NR==n' n=$Song_Number $songs )                      
+          
+            echo "MP3 Playing > [$(basename ${music})]" 
+            sleep 0.3                                                                                    
+            if [[ $( cat $playState ) == '1' ]]                                          
+              then                                                              
+              killall -CONT mpg123 2> /dev/null                                        
+              sleep 0.4                                                                                                    
+            else
+              mpg123 -q ${music} &
+              sleep 0.4
+            fi
+            echo 0 > $CommandLine                                                                                                            
+         fi                                               
+                                                                          
+ elif [[ $( cat $CommandLine ) ==  '2' ]] ; then  # 'pause'                      
+        if [ $song_counter -eq 0 ] ; then                                             
+           echo "No .MP3 files found"   
+           sleep 0.4                                        
+        else     
+           Song_Number=$( cat $SongNumber ) 
+           music=$( awk 'NR==n' n=$Song_Number $songs )                                                                                                
+           echo "MP3 Paused > [$(basename ${music})]"                             
+           sleep 0.4
+           killall -STOP  mpg123 2> /dev/null                                                                                                          
+           echo 0 > $CommandLine
+           echo 1 > $playState
+                                                             
+        fi                                                    
+                                                                              
+ elif [[ $( cat $CommandLine ) ==  '3' ]] ; then  # next                         
+        if [ $song_counter -eq 0 ] ; then                                             
+           echo "No .MP3 files found"  
+           sleep 0.4                                         
+        else       
+           killall -KILL mpg123 2> /dev/null                                                                        
+           Song_Number=$( cat $SongNumber ) 
+     
+           if [ $Song_Number -lt $song_counter ] ; then                                                                                       
+            Song_Number=$(($Song_Number+1))   
+            sleep 0.4                                                                                   
+           else
+            Song_Number=$song_counter  
+            sleep 0.4
+           fi  
+           echo $Song_Number > $SongNumber
+           music=$( awk 'NR==n' n=$Song_Number $songs )                          
+           echo "MP3 Playing > [$(basename ${music})]"                           
+           mpg123 -q ${music} &                                                  
+           echo 0 > $CommandLine                                                                                                                                                  
+        fi                                                                        
+       
+  elif [[ $( cat $CommandLine ) ==  '4' ]] ; then  # previous                     
+       if [ $song_counter -eq 0 ] ; then                                              
+           echo "No .MP3 files found"                                           
+        else     
+           killall -KILL mpg123 2> /dev/null             
+           sleep 0.4                     
+           Song_Number=$( cat $SongNumber )                                        
+                                               
+           if [ $Song_Number -gt $Min_NumberOfSong ] ; then                                                               
+             Song_Number=$(($Song_Number-1))    
+             sleep 0.4                                                                      
+           else
+             Song_Number=1
+             sleep 0.4                                                                                                                 
+           fi
+           echo $Song_Number > $SongNumber 
+           music=$( awk 'NR==n' n=$Song_Number $songs )                        
+           echo "MP3 Playing > [$(basename ${music})]"                         
+           mpg123 -q ${music} &                                                
+           echo 0 > $CommandLine                                                                        
+       fi                                                                      
                                                                                 
-                      if [ $Song_Number -lt $song_counter ] ; then              
-                        killall -KILL mpg123                                    
-                        sleep 0.5                                               
-                        Song_Number=$(($Song_Number+1))                         
-                        echo "next line"                                        
-                        echo ${Song_Number}    
-                        echo "playing song"                                     
-                        music=$( awk 'NR==n' n=$Song_Number $songs )            
-                        echo ${music}                                           
-                        mpg123 ${music} &                                       
-                      else                                                      
-                        echo "error this the last song"                         
-                      fi                                                        
-                    fi                                                          
-                  ;;                                                            
-                'previous')                                                     
-                     echo "Prev"                                                
-                     if [ $PlayingFlag -eq 1 ] ; then                           
-                      if [ $Song_Number -gt $Min_NumberOfSong] ; then           
-                        killall -KILL mpg123                                    
-                        sleep 0.5                                               
-                        Song_Number=$(($Song_Number-1))                         
-                        echo "prev line"                                        
-                        echo ${Song_Number}                                     
-                        echo "playing prev song"                                
-                        music=$( awk 'NR==n' n=$Song_Number $songs )            
-                        echo ${music}                                           
-                        mpg123 ${music} &                                       
-                      else 
-                        echo "error this is the last prev song"                 
-                      fi                                                        
-                    fi                                                          
-                  ;;                                                            
-                'shuffle')                                                      
-                     echo "Shuffle"                                             
-                     if [ $PlayingFlag -eq 1 ] ; then                           
-                      Random_Line=$(((RANDOM%song_counter) + 1))                
-                      echo "Random number"                                      
-                      echo ${Random_Line}                                       
-                      if [ $Random_Line -eq 0 ]; then                           
-                         Random_Line=1                                          
-                      fi                                                        
-                                                                                
-                      killall -KILL mpg123                                      
-                      sleep 0.5                                                 
-                      Song_Number=$Random_Line                                  
-                      echo "Random line"                                        
-                      echo ${Song_Number}                                       
-                      echo "playing prev song"                                  
-                      music=$( awk 'NR==n' n=$Song_Number $songs )              
-                      echo ${music}                                             
-                      mpg123 ${music} &    
-                                                                                
-                    fi                                                          
-                  ;;                                                            
-                  *) echo " Inviald input"                                      
-                  ;;                                                            
-    esac                                                                        
+  elif [[ $( cat $CommandLine ) ==  '5' ]] ; then  # shuffle                      
+       if [ $song_counter -eq 0 ] ; then                                              
+           echo "No .MP3 files found"   
+           sleep 0.4                                        
+       else
+                                                
+           Random_Line=$(((RANDOM%song_counter) + 1))  
+           echo $Random_Line > $SongNumber                                        
+                                                                                                                                   
+            killall -KILL mpg123 2> /dev/null
+            sleep 0.4
+            Song_Number=$Random_Line
+            echo $Song_Number > $SongNumber                                                                                 
+            music=$( awk 'NR==n' n=$Song_Number $songs )                        
+            echo "MP3 Playing > [$(basename ${music})]"                         
+            mpg123 -q ${music} &  
+            echo 0 > $CommandLine                                                                                           
+      fi                                                                        
                                                                                 
                                                                                 
-  elif [ $CommandLine -eq 0 ];then                                              
-          #echo "Button input"                                                  
-          if [ $(cat /sys/class/gpio/gpio4/value) == '1' ] ; then #if anyone pus
-            #toggle button state                                                
+   elif [ $(cat /sys/class/gpio/gpio4/value) == '1' ] ; then #if anyone pus       
+            #toggle button state 
+        if [ $song_counter -eq 0 ] ; then                                              
+           echo "No .MP3 files found"                                           
+        else                                                    
             if [ $FirstTimeFlag -eq 0 ] ; then                                  
-                                                                                
               music=$( awk 'NR==n' n=$Song_Number $songs )                      
-              echo ${music}                                                     
-              mpg123 ${music} &                                                 
+	      mpg123 -q ${music} &                                                
+	      echo "MP3 Playing > [$(basename ${music})]"  
               FirstTimeFlag=1                                                   
               PlayingFlag=1                                                     
               button_state=1                                                    
               sleep 0.5                                                         
               continue                                                          
-            fi  
+            fi                                                                  
             if [ $button_state -eq 0 ]                                          
               then                                                              
-              echo "play"                                                       
-              killall -CONT mpg123                                              
+              echo "MP3 Playing > [$(basename ${music})]"   
+              killall -CONT mpg123 &                                            
               PlayingFlag=1                                                     
               button_state=1                                                    
               sleep 0.4                                                         
             elif [ $button_state -eq 1 ]                                        
               then                                                              
-              echo "pause"                                                      
-              killall -STOP  mpg123                                             
+              echo "MP3 Puased > [$(basename ${music})]"                        
+              killall -STOP  mpg123 &                                           
               PlayingFlag=0                                                     
               button_state=0                                                    
               sleep 0.4 # to allow finger release                               
             fi                                                                  
-          fi                                                                    
+         fi                                                              
                                                                                 
-          if [ $(cat /sys/class/gpio/gpio17/value) == '1' ] ; then #next        
-             echo "next button"                                                 
-             if [ $PlayingFlag -eq 1 ] ; then                                   
-              echo $PlayingFlag                                                 
-              echo ${Song_Number}                                               
-              if [ $Song_Number -lt $song_counter ] ; then   
-            killall -KILL mpg123                                            
-                sleep 0.5                                                       
-                Song_Number=$(($Song_Number+1))                                 
-                echo "next line"                                                
-                     echo ${Song_Number}                                        
-                echo "playing song"                                             
-                music=$( awk 'NR==n' n=$Song_Number $songs )                    
-                echo ${music}                                                   
-                mpg123 ${music} &                                               
+   elif [ $(cat /sys/class/gpio/gpio17/value) == '1' ] ; then #next  
+         sleep 0.5             
+         if [ $song_counter -eq 0 ] ; then                                             
+           echo "No .MP3 files found"                                           
+        else      
+            if [ $PlayingFlag -eq 1 ] ; then  
+              killall -KILL mpg123 &                                            
+              Song_Number=$( cat $SongNumber )                                   
+              if [ $Song_Number -lt $song_counter ] ; then                         
+                Song_Number=$(($Song_Number+1))    
+                sleep 0.4                                 
               else                                                              
-                echo "error this the last song"                                 
-              fi                                                                
-            fi                                                                  
-          fi                                                                    
-          if [ $(cat /sys/class/gpio/gpio18/value) == '1' ] ; then #prev        
-             if [ $PlayingFlag -eq 1 ] ; then                                   
-              if [ $Song_Number -gt $Min_NumberOfSong ] ; then                  
-                killall -KILL mpg123                                            
-                sleep 0.5                                                       
-                Song_Number=$(($Song_Number-1))                                 
-                echo "prev line"                                                
-                echo ${Song_Number}                                             
-                echo "playing prev song"   
-                music=$( awk 'NR==n' n=$Song_Number $songs )                    
-                echo ${music}                                                   
-                mpg123 ${music} &                                               
-              else                                                              
-                        echo "error this is the last prev song"                 
-              fi                                                                
-            fi                                                                  
-          fi                                                                    
-          if [ $(cat /sys/class/gpio/gpio27/value) == '1' ] ; then #Shuffel     
-             if [ $PlayingFlag -eq 1 ] ; then                                   
-              Random_Line=$(((RANDOM%song_counter) + 1))                        
-              echo "Random number"                                              
-              echo ${Random_Line}                                               
-              if [ $Random_Line -eq 0 ]; then                                   
-                 Random_Line=1                                                  
-              fi                                                                
+                Song_Number=$song_counter
+                sleep 0.4                                           
+              fi                                                                   
+                                        
+              music=$( awk 'NR==n' n=$Song_Number $songs )                         
+              echo "MP3 Playing > [$(basename ${music})]" 
+              echo $Song_Number > $SongNumber 
+              mpg123 -q ${music} &                               
+            fi                                                                
+        fi                                                                  
+                                                                 
+   elif [ $(cat /sys/class/gpio/gpio18/value) == '1' ] ; then #prev               
+         sleep 0.5        
+         if [ $song_counter -eq 0 ] ; then                                             
+           echo "No .MP3 files found"                                           
+        else     
+           if [ $PlayingFlag -eq 1 ] ; then    
+              killall -KILL mpg123 &                                          
+             # sleep 0.5
+              #pidof mpg123 | xargs kill -9 >/dev/null     
+              Song_Number=$( cat $SongNumber )                               
+              if [ $Song_Number -gt $Min_NumberOfSong ] ; then                               
+                Song_Number=$(($Song_Number-1))                                    
+              else                                                                 
+                 Song_Number=1                                                      
+              fi                                          
+              echo $Song_Number > $SongNumber                                  
+              music=$( awk 'NR==n' n=$Song_Number $songs )                    
+              echo "MP3 Playing > [$(basename ${music})]"                     
+              mpg123 -q ${music} &                                               
+              sleep 0.4                                                  
+           fi                                                                  
+        fi  
+                                                                
+   elif [ $(cat /sys/class/gpio/gpio27/value) == '1' ] ; then #Shuffel            
+        sleep 0.5
+        if [ $song_counter -eq 0 ] ; then                                              
+           echo "No .MP3 files found"                                           
+        else     
+           if [ $PlayingFlag -eq 1 ] ; then                                   
+             Random_Line=$(((RANDOM%song_counter) + 1))                           
+             echo $Random_Line > $SongNumber                                      
                                                                                 
-              killall -KILL mpg123                                              
-              sleep 0.5                                                         
-              Song_Number=$Random_Line                                          
-              echo "Random line"                                                
-              echo ${Song_Number}                                               
-              echo "playing prev song" 
-              music=$( awk 'NR==n' n=$Song_Number $songs )                      
-              echo ${music}                                                     
-              mpg123 ${music} &                                                 
-                                                                                
-            fi                                                                  
-          fi                                                                    
-   fi                                                                           
+             killall -KILL mpg123 &                                            
+             Song_Number=$Random_Line                                            
+             echo $Song_Number > $SongNumber                                     
+             music=$( awk 'NR==n' n=$Song_Number $songs )                        
+             echo "MP3 Playing > [$(basename ${music})]"                         
+             mpg123 -q ${music} &                                                                                                                                    
+           fi                                                                  
+        fi                                                                
+  fi                                                                              
 done                                                                            
                                                                                 
-             
-     
+       
+
