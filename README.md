@@ -7,6 +7,9 @@
 - Adding configuration build root (make menuconfig)
 - make
 
+![Image](https://raw.githubusercontent.com/Nada8773/Raspberry-MP3-Player/master/image1.png)
+
+
 #### Generic System
 ```
 -  System Configuration ->  Root Password (12345)
